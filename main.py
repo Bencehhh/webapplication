@@ -10,7 +10,7 @@ WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 
 @app.route('/')
 def home():
-    return "Welcome to the Moderation Logger Web App!"
+    return "Unauthorized to enter!"
 
 @app.route('/get-webhook', methods=['GET'])
 def get_webhook():
