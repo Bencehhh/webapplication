@@ -2,6 +2,7 @@ import json
 import os
 import requests
 from flask import Flask, request, jsonify
+from datetime import datetime  # Import for UTC timestamp
 
 app = Flask(__name__)
 
@@ -26,6 +27,7 @@ def webhook():
     player_data = data.get('playerData')
     join_leave_logs = data.get('joinLeaveLogs')
     chat_logs = data.get('chatLogs')
+    private_server_links = data.get('privateServerLinks')  # Extract private server links
     
     # Prepare the Discord webhook payload
     discord_payload = {
@@ -38,13 +40,14 @@ def webhook():
                 {"name": "Server ID", "value": str(server_id), "inline": True},
                 {"name": "Players", "value": player_data if player_data else "No players in the server.", "inline": False},
                 {"name": "Join/Leave Logs", "value": join_leave_logs if join_leave_logs else "No recent activity.", "inline": False},
-                {"name": "Chat Logs", "value": chat_logs if chat_logs else "No messages.", "inline": False}
+                {"name": "Chat Logs", "value": chat_logs if chat_logs else "No messages.", "inline": False},
+                {"name": "Private Server Links", "value": private_server_links if private_server_links else "No private server links shared.", "inline": False}
             ],
             "footer": {
                 "text": "Moderation Logs",
                 "icon_url": "https://i.imgur.com/AfFp7pu.png"  # Optional footer icon
             },
-            "timestamp": "2024-11-30T00:00:00Z"  # Use the current UTC time here
+            "timestamp": datetime.utcnow().isoformat() + "Z"  # Current UTC time
         }]
     }
 
