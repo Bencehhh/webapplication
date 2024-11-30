@@ -1,66 +1,75 @@
-import json
+from flask import Flask, jsonify, request
 import os
+import json
 import requests
-from flask import Flask, request, jsonify
-from datetime import datetime  # Import for UTC timestamp
 
 app = Flask(__name__)
 
-# Retrieve the secret keys from environment variables
-discord_webhook_url = os.getenv("WEBHOOK_URL")
-api_key = os.getenv("API_KEY")
+API_KEY = os.environ.get("API_KEY")
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
+
+@app.route('/')
+def home():
+    return "Welcome to the Moderation Logger Web App!"
+
+@app.route('/get-webhook', methods=['GET'])
+def get_webhook():
+    api_key = request.args.get('api_key')
+
+    if api_key != API_KEY:
+        return jsonify({"error": "Unauthorized"}), 403
+
+    return jsonify({"webhook_url": WEBHOOK_URL})
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    # Ensure that the webhook URL and API key are available
-    if not discord_webhook_url or not api_key:
-        return jsonify({"status": "error", "message": "Missing webhook URL or API key"}), 400
-    
-    data = request.json  # Parse JSON from incoming request
-    
-    # Debugging: Print the received data
+    # Ensure the webhook URL and API key are available
+    if not API_KEY or not WEBHOOK_URL:
+        return jsonify({"status": "error", "message": "Server misconfiguration"}), 500
+
+    # Parse incoming request
+    data = request.json
+    if not data:
+        return jsonify({"status": "error", "message": "No data received"}), 400
+
+    # Debugging: Log received data
     print("Received data:", json.dumps(data, indent=4))
-    
-    # Extract information from the payload
-    place_id = data.get('placeId')
-    server_id = data.get('serverId')
-    player_data = data.get('playerData')
-    join_leave_logs = data.get('joinLeaveLogs')
-    chat_logs = data.get('chatLogs')
-    private_server_links = data.get('privateServerLinks')  # Extract private server links
-    
-    # Prepare the Discord webhook payload
+
+    # Extract data
+    place_id = data.get("placeId")
+    server_id = data.get("serverId")
+    player_data = data.get("playerData")
+    join_leave_logs = data.get("joinLeaveLogs")
+    chat_logs = data.get("chatLogs")
+    private_server_links = data.get("privateServerLinks")
+
+    # Prepare Discord payload
     discord_payload = {
         "embeds": [{
             "title": "Moderation Log",
             "description": "Server Activity Report",
-            "color": 3447003,  # Blue color
+            "color": 3447003,
             "fields": [
-                {"name": "Place ID", "value": str(place_id), "inline": True},
-                {"name": "Server ID", "value": str(server_id), "inline": True},
-                {"name": "Players", "value": player_data if player_data else "No players in the server.", "inline": False},
-                {"name": "Join/Leave Logs", "value": join_leave_logs if join_leave_logs else "No recent activity.", "inline": False},
-                {"name": "Chat Logs", "value": chat_logs if chat_logs else "No messages.", "inline": False},
-                {"name": "Private Server Links", "value": private_server_links if private_server_links else "No private server links shared.", "inline": False}
-            ],
-            "footer": {
-                "text": "Moderation Logs",
-                "icon_url": "https://i.imgur.com/AfFp7pu.png"  # Optional footer icon
-            },
-            "timestamp": datetime.utcnow().isoformat() + "Z"  # Current UTC time
+                {"name": "Place ID", "value": place_id or "Unknown", "inline": True},
+                {"name": "Server ID", "value": server_id or "Unknown", "inline": True},
+                {"name": "Players", "value": player_data or "No players", "inline": False},
+                {"name": "Join/Leave Logs", "value": join_leave_logs or "No recent activity", "inline": False},
+                {"name": "Chat Logs", "value": chat_logs or "No messages", "inline": False},
+                {"name": "Private Server Links", "value": private_server_links or "No links shared", "inline": False}
+            ]
         }]
     }
 
-    # Send data to Discord webhook with the API key as a header (if necessary)
-    headers = {"Authorization": f"Bearer {api_key}"}
-    response = requests.post(discord_webhook_url, json=discord_payload, headers=headers)
+    # Send to Discord
+    headers = {"Authorization": f"Bearer {API_KEY}"}
+    response = requests.post(WEBHOOK_URL, json=discord_payload, headers=headers)
 
     if response.status_code == 204:
-        print("Successfully forwarded data to Discord!")
+        print("Successfully sent data to Discord.")
+        return jsonify({"status": "success"}), 200
     else:
-        print("Failed to forward data to Discord:", response.text)
+        print("Failed to send to Discord:", response.text)
+        return jsonify({"status": "error", "message": "Failed to send to Discord"}), 500
 
-    return jsonify({"status": "success"}), 200
-
-if __name__ == '__main__':
-    app.run(debug=True)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8080, debug=True)
