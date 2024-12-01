@@ -1,48 +1,4 @@
-import json
-import os
-import requests
-from flask import Flask, request, jsonify
-from datetime import datetime
-import re
-from threading import Timer
-
-app = Flask("__main__")
-
-discord_webhook_url = os.getenv("WEBHOOK_URL")
-api_key = os.getenv("API_KEY")
-
-MAX_CHAT_LOGS = 50
-chat_buffer = []
-sent_messages = set()
-player_data = {}  # Tracks player names and display names
-join_logs = []  # Logs player joins
-leave_logs = []  # Logs player leaves
-
-def decode_message(message):
-    """Decode a message by replacing sequences of '#' with '[REDACTED]'."""
-    return re.sub(r'#+', '[REDACTED]', message)
-
-def add_to_chat_buffer(chat_log):
-    """Add a chat log to the rolling buffer, maintaining size limit."""
-    global chat_buffer
-    chat_buffer.append(chat_log)
-    if len(chat_buffer) > MAX_CHAT_LOGS:
-        chat_buffer.pop(0)  # Remove the oldest message
-
-def send_to_discord(payload):
-    """Send data to Discord webhook."""
-    headers = {"Authorization": f"Bearer {api_key}"}
-    try:
-        print("Payload to send to Discord:", json.dumps(payload, indent=4))
-        
-        response = requests.post(discord_webhook_url, json=payload, headers=headers, timeout=10)
-        print(f"Discord HTTP Status: {response.status_code}")
-        print(f"Discord Response: {response.text}")
-        response.raise_for_status()
-        return response.status_code == 204
-    except requests.exceptions.RequestException as e:
-        print(f"Error while sending to Discord: {str(e)}")
-        return False
+active_players = {}  # Tracks currently active players and their join times
 
 @app.route('/', methods=['POST'])
 def root():
@@ -57,6 +13,9 @@ def root():
 
         # Update player data
         player_list = data.get('playerData', '').split('\n')
+        global player_data, join_logs, leave_logs
+
+        # Reset player data and process player list
         player_data.clear()
         for player_info in player_list:
             name, display_name = player_info.split(" (")
@@ -66,12 +25,26 @@ def root():
         # Process join and leave logs
         join_leave_logs = data.get('joinLeaveLogs', '').split('\n')
         for log in join_leave_logs:
-            if "joined the game" in log and log not in join_logs:
-                timestamp = datetime.utcnow().isoformat() + "Z"
-                join_logs.append(f"{log} at {timestamp}")
-            elif "left the game" in log and log not in leave_logs:
-                timestamp = datetime.utcnow().isoformat() + "Z"
-                leave_logs.append(f"{log} at {timestamp}")
+            if "joined the game" in log:
+                # Extract player name and display name from log
+                match = re.match(r"(.+) \((.+)\) joined the game\.", log)
+                if match:
+                    name, display_name = match.groups()
+                    if name not in active_players:
+                        # Add to active players and log their join
+                        timestamp = datetime.utcnow().isoformat() + "Z"
+                        active_players[name] = timestamp
+                        join_logs.append(f"{log} at {timestamp}")
+            elif "left the game" in log:
+                # Extract player name and display name from log
+                match = re.match(r"(.+) \((.+)\) left the game\.", log)
+                if match:
+                    name, _ = match.groups()
+                    if name in active_players:
+                        # Remove from active players and log their leave
+                        timestamp = datetime.utcnow().isoformat() + "Z"
+                        del active_players[name]
+                        leave_logs.append(f"{log} at {timestamp}")
 
         # Process chat logs (decode them before adding to the buffer)
         chat_logs = data.get('chatLogs', [])
@@ -133,17 +106,3 @@ def root():
     except Exception as e:
         print("Error while processing request:", str(e))
         return jsonify({"status": "error", "message": str(e)}), 500
-
-def reset_sent_messages():
-    """Reset the sent messages and logs periodically."""
-    global sent_messages, join_logs, leave_logs
-    sent_messages.clear()
-    join_logs.clear()
-    leave_logs.clear()
-    print("Logs and sent messages reset")
-
-# Reset logs and sent messages every 60 seconds
-Timer(60, reset_sent_messages, args=[]).start()
-
-if __name__ == "__main__":
-    app.run(debug=True)
