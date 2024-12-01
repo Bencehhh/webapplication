@@ -88,4 +88,4 @@ def webhook():
 
 if __name__ == "__main__":
     # Set debugging for development purposes
-    app.run(host="0.0.0.0", port=8080, debug=True)
+    app.run(host="0.0.0.0", port=8080, debug=true)
