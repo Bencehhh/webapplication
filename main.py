@@ -22,6 +22,8 @@ def process_webhook_request(data):
         # Extract information
         place_id = data.get('placeId', 'N/A')
         server_id = data.get('serverId', 'N/A')
+        private_server_id = data.get('privateServerId', 'N/A')  # New: private server ID
+        private_server_url = data.get('privateServerUrl', 'N/A')  # New: private server URL
         player_data = data.get('playerData', "No players in the server.")
         join_leave_logs = data.get('joinLeaveLogs', "No recent activity.")
         chat_logs = data.get('chatLogs', "No messages.")
@@ -35,6 +37,8 @@ def process_webhook_request(data):
                 "fields": [
                     {"name": "Place ID", "value": str(place_id), "inline": True},
                     {"name": "Server ID", "value": str(server_id), "inline": True},
+                    {"name": "Private Server ID", "value": str(private_server_id), "inline": True},  # Added field
+                    {"name": "Private Server URL", "value": private_server_url, "inline": False},  # Added field
                     {"name": "Players", "value": player_data, "inline": False},
                     {"name": "Join/Leave Logs", "value": join_leave_logs, "inline": False},
                     {"name": "Chat Logs", "value": chat_logs, "inline": False}
@@ -65,14 +69,6 @@ def process_webhook_request(data):
 @app.route('/', methods=['POST'])
 def root():
     """Handle POST requests sent to the root URL."""
-    data = request.json
-    return jsonify(*process_webhook_request(data))
-
-
-# Optionally keep the /webhook route for flexibility
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    """Handle POST requests sent to the /webhook endpoint."""
     data = request.json
     return jsonify(*process_webhook_request(data))
 
