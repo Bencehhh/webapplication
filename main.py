@@ -11,7 +11,7 @@ discord_webhook_url = os.getenv("WEBHOOK_URL")
 api_key = os.getenv("API_KEY")
 
 # Rolling buffer for chat messages
-MAX_CHAT_LOGS = 10
+MAX_CHAT_LOGS = 50
 chat_buffer = []
 
 def add_to_chat_buffer(chat_log):
