@@ -9,14 +9,15 @@ app = Flask(__name__)
 discord_webhook_url = os.getenv("WEBHOOK_URL")
 api_key = os.getenv("API_KEY")
 
-@app.route('/webhook', methods=['POST'])
-def webhook():
+
+def process_webhook_request(data):
+    """Processes the incoming webhook request and forwards it to Discord."""
     if not discord_webhook_url or not api_key:
-        return jsonify({"status": "error", "message": "Missing URL or API key"}), 400
+        return {"status": "error", "message": "Missing URL or API key"}, 400
 
     try:
-        data = request.json  # Parse JSON from incoming request
-        print("Received data:", json.dumps(data, indent=4))  # Debugging: print received data
+        # Debugging: Print received data
+        print("Received data:", json.dumps(data, indent=4))
 
         # Extract information
         place_id = data.get('placeId', 'N/A')
@@ -24,7 +25,7 @@ def webhook():
         player_data = data.get('playerData', "No players in the server.")
         join_leave_logs = data.get('joinLeaveLogs', "No recent activity.")
         chat_logs = data.get('chatLogs', "No messages.")
-        
+
         # Construct Discord payload
         discord_payload = {
             "embeds": [{
@@ -41,27 +42,40 @@ def webhook():
             }]
         }
 
-        # Print the Discord payload for debugging
+        # Debugging: Print payload
         print("Sending payload to Discord:", json.dumps(discord_payload, indent=4))
 
         # Send data to Discord webhook
-        headers = {}
+        headers = {"Authorization": f"Bearer {api_key}"}
         response = requests.post(discord_webhook_url, json=discord_payload, headers=headers)
 
         # Check Discord response
         print("Discord Response:", response.status_code, response.text)
         if response.status_code == 204:
-            print("Successfully forwarded data to Discord!")
+            return {"status": "success"}, 200
         else:
             print(f"Failed to forward data to Discord. Status: {response.status_code}, Response: {response.text}")
-            return jsonify({"status": "error", "message": "Failed to forward data to Discord"}), 500
-        
-        return jsonify({"status": "success"}), 200
+            return {"status": "error", "message": "Failed to forward data to Discord"}, 500
 
     except Exception as e:
         print("Error while processing request:", str(e))
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return {"status": "error", "message": str(e)}, 500
+
+
+@app.route('/', methods=['POST'])
+def root():
+    """Handle POST requests sent to the root URL."""
+    data = request.json
+    return jsonify(*process_webhook_request(data))
+
+
+# Optionally keep the /webhook route for flexibility
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    """Handle POST requests sent to the /webhook endpoint."""
+    data = request.json
+    return jsonify(*process_webhook_request(data))
+
 
 if __name__ == '__main__':
-    # Let the platform handle the port (no explicit mention of port)
-    app.run(debug=True, host='0.0.0.0')
+    app.run(debug=True)
