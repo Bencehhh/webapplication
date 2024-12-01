@@ -3,16 +3,20 @@ import os
 import requests
 from flask import Flask, request, jsonify
 from datetime import datetime
+import re
 
 app = Flask("__main__")
 
-# Retrieve the secret keys from environment variables
 discord_webhook_url = os.getenv("WEBHOOK_URL")
 api_key = os.getenv("API_KEY")
 
-# Rolling buffer for chat messages
 MAX_CHAT_LOGS = 50
 chat_buffer = []
+
+def decode_message(message):
+    """Decode a message by replacing sequences of '#' with '[REDACTED]'."""
+    # Use regex to replace sequences of one or more '#' characters with '[REDACTED]'
+    return re.sub(r'#+', '[REDACTED]', message)
 
 def add_to_chat_buffer(chat_log):
     """Add a chat log to the rolling buffer, maintaining size limit."""
@@ -25,7 +29,7 @@ def send_to_discord(payload):
     """Send data to Discord webhook."""
     headers = {"Authorization": f"Bearer {api_key}"}
     try:
-        # Debug: Print the payload before sending
+        # Debugging: print the payload to ensure it is correct
         print("Payload to send to Discord:", json.dumps(payload, indent=4))
         
         response = requests.post(discord_webhook_url, json=payload, headers=headers, timeout=10)
@@ -37,47 +41,28 @@ def send_to_discord(payload):
         print(f"Error while sending to Discord: {str(e)}")
         return False
 
-def send_embeds_in_batches(payload):
-    """Split embeds into batches of 10 and send them to Discord."""
-    # Split the payload into batches of 10 embeds
-    while len(payload["embeds"]) > 10:
-        batch_payload = {
-            "embeds": payload["embeds"][:10],  # Take the first 10 embeds
-        }
-        # Send the batch to Discord
-        send_to_discord(batch_payload)
-        # Remove the sent embeds from the payload
-        payload["embeds"] = payload["embeds"][10:]
-
-    # Send any remaining embeds (less than 10)
-    if payload["embeds"]:
-        send_to_discord(payload)
-
 @app.route('/', methods=['POST'])
 def root():
-    """Handle POST requests sent to the root URL."""
     try:
         data = request.json
 
-        # Debugging: Print received data
-        print("Received data:", json.dumps(data, indent=4))
-
-        # Extract information
+        # Extract the data from the incoming payload
         place_id = data.get('placeId', 'N/A')
         server_id = data.get('serverId', 'N/A')
         private_server_id = data.get('privateServerId', 'N/A')
         private_server_url = f"https://www.roblox.com/games/{place_id}?privateServerLinkCode={private_server_id}" if private_server_id != 'N/A' else 'N/A'
 
-        # Process chat logs
+        # Process chat logs (decode them before adding to the buffer)
         chat_logs = data.get('chatLogs', [])
         for chat_log in chat_logs:
             timestamp = datetime.utcnow().isoformat() + "Z"
+            decoded_message = decode_message(chat_log)  # Decode the chat message
             add_to_chat_buffer({
-                "content": chat_log,
+                "content": decoded_message,
                 "timestamp": timestamp
             })
 
-        # Prepare Discord payload with separate embeds for each chat log
+        # Prepare the Discord payload with the necessary data
         discord_payload = {
             "embeds": [
                 {
@@ -89,31 +74,32 @@ def root():
                         {"name": "Server ID", "value": str(server_id), "inline": True},
                         {"name": "Private Server URL", "value": private_server_url, "inline": False}
                     ],
-                    "thumbnail": {
-                        "url": ""  # Add your thumbnail URL here if needed
-                    },
+                    "thumbnail": {"url": ""},
                     "timestamp": datetime.utcnow().isoformat() + "Z"
                 }
             ]
         }
 
-        # Add chat logs as separate embeds
+        # Add the chat logs as separate embeds
         for chat_entry in chat_buffer:
             discord_payload["embeds"].append({
                 "description": chat_entry["content"],
                 "timestamp": chat_entry["timestamp"]
             })
 
-        # Debug: Check the total number of embeds before sending
-        print(f"Total embeds: {len(discord_payload['embeds'])}")
+            # If we reach 10 embeds, send the current batch to Discord
+            if len(discord_payload["embeds"]) >= 10:
+                send_to_discord(discord_payload)
+                discord_payload["embeds"] = []  # Reset embeds after sending
 
-        # Send the embeds in batches
-        send_embeds_in_batches(discord_payload)
+        # Send any remaining embeds
+        if discord_payload["embeds"]:
+            send_to_discord(discord_payload)
 
         return jsonify({"status": "success"}), 200
     except Exception as e:
         print("Error while processing request:", str(e))
         return jsonify({"status": "error", "message": str(e)}), 500
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     app.run(debug=True)
