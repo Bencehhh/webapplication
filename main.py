@@ -3,7 +3,7 @@ import os
 import requests
 from flask import Flask, request, jsonify
 
-app = Flask(__name__)
+app = Flask("__main__")
 
 # Retrieve the secret keys from environment variables
 discord_webhook_url = os.getenv("WEBHOOK_URL")
