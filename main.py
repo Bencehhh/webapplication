@@ -74,27 +74,33 @@ def root():
                         {"name": "Private Server URL", "value": private_server_url, "inline": False}
                     ],
                     "thumbnail": {
-                        "url": ""
+                        "url": "https://i.imgur.com/mfd-JVbC0js.png"
                     },
                     "timestamp": datetime.utcnow().isoformat() + "Z"
                 }
             ]
         }
 
+        # Debugging: Log the chat logs
+        print("Chat Logs:", chat_buffer)
+
         # Add chat logs as separate embeds
         for chat_entry in chat_buffer:
+            print(f"Adding chat log to embed: {chat_entry}")  # Debugging the chat entry
+            
+            # Make sure content is properly being passed
             discord_payload["embeds"].append({
                 "description": chat_entry["content"],
                 "timestamp": chat_entry["timestamp"]
             })
 
-            # Debug: Check the total number of embeds before sending
-            print(f"Total embeds: {len(discord_payload['embeds'])}")
+        # Debug: Check the total number of embeds before sending
+        print(f"Total embeds: {len(discord_payload['embeds'])}")
 
-            # Send in batches of 10 embeds to avoid exceeding Discord's limit
-            if len(discord_payload["embeds"]) >= 10:
-                send_to_discord(discord_payload)
-                discord_payload["embeds"] = []  # Reset embeds after sending
+        # Send in batches of 10 embeds to avoid exceeding Discord's limit
+        if len(discord_payload["embeds"]) >= 10:
+            send_to_discord(discord_payload)
+            discord_payload["embeds"] = []  # Reset embeds after sending
 
         # Send any remaining embeds
         if discord_payload["embeds"]:
