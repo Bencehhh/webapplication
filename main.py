@@ -2,6 +2,7 @@ import json
 import os
 import requests
 from flask import Flask, request, jsonify
+from datetime import datetime
 
 app = Flask("__main__")
 
@@ -28,6 +29,9 @@ def process_webhook_request(data):
         join_leave_logs = data.get('joinLeaveLogs', "No recent activity.")
         chat_logs = data.get('chatLogs', "No messages.")
 
+        # Generate the current timestamp in ISO 8601 format
+        timestamp = datetime.utcnow().isoformat() + "Z"
+
         # Construct Discord payload
         discord_payload = {
             "embeds": [{
@@ -37,12 +41,14 @@ def process_webhook_request(data):
                 "fields": [
                     {"name": "Place ID", "value": str(place_id), "inline": True},
                     {"name": "Server ID", "value": str(server_id), "inline": True},
-                    {"name": "Private Server ID", "value": str(private_server_id), "inline": True},  # Added field
-                    {"name": "Private Server URL", "value": private_server_url, "inline": False},  # Added field
+                    {"name": "Private Server ID", "value": str(private_server_id), "inline": True},
+                    {"name": "Private Server URL", "value": private_server_url, "inline": False},
                     {"name": "Players", "value": player_data, "inline": False},
                     {"name": "Join/Leave Logs", "value": join_leave_logs, "inline": False},
                     {"name": "Chat Logs", "value": chat_logs, "inline": False}
-                ]
+                ],
+                "timestamp": timestamp,  # Add timestamp to embed
+                "thumbnail": {"url": "https://i.imgur.com/mfd-JVbC0js.png"}  # Add thumbnail logo
             }]
         }
 
