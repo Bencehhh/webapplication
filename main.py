@@ -4,6 +4,7 @@ import requests
 from flask import Flask, request, jsonify
 from datetime import datetime
 import re
+from threading import Timer
 
 app = Flask("__main__")
 
@@ -12,10 +13,10 @@ api_key = os.getenv("API_KEY")
 
 MAX_CHAT_LOGS = 50
 chat_buffer = []
+sent_messages = set()  # To track sent messages by their content
 
 def decode_message(message):
     """Decode a message by replacing sequences of '#' with '[REDACTED]'."""
-    # Use regex to replace sequences of one or more '#' characters with '[REDACTED]'
     return re.sub(r'#+', '[REDACTED]', message)
 
 def add_to_chat_buffer(chat_log):
@@ -54,13 +55,27 @@ def root():
 
         # Process chat logs (decode them before adding to the buffer)
         chat_logs = data.get('chatLogs', [])
+        new_chat_logs = []  # Store only new chat logs
+
         for chat_log in chat_logs:
-            timestamp = datetime.utcnow().isoformat() + "Z"
             decoded_message = decode_message(chat_log)  # Decode the chat message
-            add_to_chat_buffer({
-                "content": decoded_message,
-                "timestamp": timestamp
-            })
+            
+            # Only add the chat log if it hasn't been sent before
+            if decoded_message not in sent_messages:
+                timestamp = datetime.utcnow().isoformat() + "Z"
+                add_to_chat_buffer({
+                    "content": decoded_message,
+                    "timestamp": timestamp
+                })
+                new_chat_logs.append({
+                    "content": decoded_message,
+                    "timestamp": timestamp
+                })
+                sent_messages.add(decoded_message)  # Mark this message as sent
+
+        # If there are no new messages, return immediately
+        if not new_chat_logs:
+            return jsonify({"status": "no new messages"}), 200
 
         # Prepare the Discord payload with the necessary data
         discord_payload = {
@@ -80,8 +95,8 @@ def root():
             ]
         }
 
-        # Add the chat logs as separate embeds
-        for chat_entry in chat_buffer:
+        # Add the new chat logs as separate embeds
+        for chat_entry in new_chat_logs:
             discord_payload["embeds"].append({
                 "description": chat_entry["content"],
                 "timestamp": chat_entry["timestamp"]
@@ -100,6 +115,15 @@ def root():
     except Exception as e:
         print("Error while processing request:", str(e))
         return jsonify({"status": "error", "message": str(e)}), 500
+
+def reset_sent_messages():
+    """Reset the sent messages list periodically."""
+    global sent_messages
+    sent_messages.clear()  # Clear the set of sent messages
+    print("Sent messages reset")
+
+# Reset the sent messages every 60 seconds
+Timer(60, reset_sent_messages, args=[]).start()
 
 if __name__ == "__main__":
     app.run(debug=True)
