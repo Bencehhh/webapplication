@@ -9,30 +9,38 @@ app = Flask(__name__)
 API_KEY = os.environ.get("API_KEY")
 DISCORD_WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 
+# Home route for a health check
 @app.route('/')
 def home():
     return "Web App is Running!"
 
+# Webhook endpoint
 @app.route('/webhook', methods=['POST'])
 def webhook():
+    # Check if secrets are missing
     if not DISCORD_WEBHOOK_URL:
+        app.logger.error("Discord webhook URL is missing!")
         return jsonify({"status": "error", "message": "Missing Discord webhook URL"}), 500
 
     if not API_KEY:
+        app.logger.error("API key is missing!")
         return jsonify({"status": "error", "message": "Missing API key"}), 500
 
-    # Validate API key if required
+    # Validate API key
     auth_key = request.headers.get('Authorization')
     if auth_key != f"Bearer {API_KEY}":
+        app.logger.warning("Unauthorized access attempt detected!")
         return jsonify({"status": "error", "message": "Unauthorized"}), 403
 
+    # Extract and validate payload
     data = request.json
     if not data:
+        app.logger.error("No payload received in the request!")
         return jsonify({"status": "error", "message": "No data received"}), 400
 
-    print("Payload received from Roblox:", json.dumps(data, indent=4))  # Debug
+    app.logger.info("Payload received from Roblox: %s", json.dumps(data, indent=4))
 
-    # Extract details
+    # Extract data fields with defaults
     place_id = data.get('placeId', 'N/A')
     server_id = data.get('serverId', 'N/A')
     player_data = data.get('playerData', 'No players in the server.')
@@ -61,19 +69,23 @@ def webhook():
         ]
     }
 
-    # Send data to Discord webhook
+    # Debug: Log the Discord payload
+    app.logger.debug("Payload to be sent to Discord: %s", json.dumps(discord_payload, indent=4))
+
+    # Send the data to Discord webhook
     try:
         response = requests.post(DISCORD_WEBHOOK_URL, json=discord_payload)
-        if response.status_code == 204:  # No Content
-            print("Message sent to Discord successfully!")
+        if response.status_code == 204:  # No Content (success)
+            app.logger.info("Message sent to Discord successfully!")
             return jsonify({"status": "success"}), 200
         else:
-            print("Failed to send message to Discord:", response.status_code, response.text)
+            app.logger.error("Failed to send message to Discord: %s %s", response.status_code, response.text)
             return jsonify({"status": "error", "message": "Failed to send to Discord"}), 500
-    except Exception as e:
-        print("Error while sending to Discord:", str(e))
+    except requests.exceptions.RequestException as e:
+        app.logger.exception("Exception occurred while sending to Discord:")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+    # Set debugging for development purposes
+    app.run(host="0.0.0.0", port=8080, debug=True)
