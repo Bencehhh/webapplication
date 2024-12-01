@@ -45,7 +45,7 @@ def webhook():
         print("Sending payload to Discord:", json.dumps(discord_payload, indent=4))
 
         # Send data to Discord webhook
-        headers = {"Authorization": f"Bearer {api_key}"}
+        headers = {}
         response = requests.post(discord_webhook_url, json=discord_payload, headers=headers)
 
         # Check Discord response
@@ -63,4 +63,5 @@ def webhook():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    # Let the platform handle the port (no explicit mention of port)
+    app.run(debug=True, host='0.0.0.0')
