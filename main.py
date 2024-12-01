@@ -13,7 +13,10 @@ api_key = os.getenv("API_KEY")
 
 MAX_CHAT_LOGS = 50
 chat_buffer = []
-sent_messages = set()  # To track sent messages by their content
+sent_messages = set()
+player_data = {}  # Tracks player names and display names
+join_logs = []  # Logs player joins
+leave_logs = []  # Logs player leaves
 
 def decode_message(message):
     """Decode a message by replacing sequences of '#' with '[REDACTED]'."""
@@ -30,7 +33,6 @@ def send_to_discord(payload):
     """Send data to Discord webhook."""
     headers = {"Authorization": f"Bearer {api_key}"}
     try:
-        # Debugging: print the payload to ensure it is correct
         print("Payload to send to Discord:", json.dumps(payload, indent=4))
         
         response = requests.post(discord_webhook_url, json=payload, headers=headers, timeout=10)
@@ -47,20 +49,37 @@ def root():
     try:
         data = request.json
 
-        # Extract the data from the incoming payload
+        # Extract server and place information
         place_id = data.get('placeId', 'N/A')
         server_id = data.get('serverId', 'N/A')
         private_server_id = data.get('privateServerId', 'N/A')
         private_server_url = f"https://www.roblox.com/games/{place_id}?privateServerLinkCode={private_server_id}" if private_server_id != 'N/A' else 'N/A'
 
+        # Update player data
+        player_list = data.get('playerData', '').split('\n')
+        player_data.clear()
+        for player_info in player_list:
+            name, display_name = player_info.split(" (")
+            display_name = display_name.rstrip(")")
+            player_data[name] = display_name
+
+        # Process join and leave logs
+        join_leave_logs = data.get('joinLeaveLogs', '').split('\n')
+        for log in join_leave_logs:
+            if "joined the game" in log and log not in join_logs:
+                timestamp = datetime.utcnow().isoformat() + "Z"
+                join_logs.append(f"{log} at {timestamp}")
+            elif "left the game" in log and log not in leave_logs:
+                timestamp = datetime.utcnow().isoformat() + "Z"
+                leave_logs.append(f"{log} at {timestamp}")
+
         # Process chat logs (decode them before adding to the buffer)
         chat_logs = data.get('chatLogs', [])
-        new_chat_logs = []  # Store only new chat logs
+        new_chat_logs = []
 
         for chat_log in chat_logs:
-            decoded_message = decode_message(chat_log)  # Decode the chat message
-            
-            # Only add the chat log if it hasn't been sent before
+            decoded_message = decode_message(chat_log)
+
             if decoded_message not in sent_messages:
                 timestamp = datetime.utcnow().isoformat() + "Z"
                 add_to_chat_buffer({
@@ -71,13 +90,9 @@ def root():
                     "content": decoded_message,
                     "timestamp": timestamp
                 })
-                sent_messages.add(decoded_message)  # Mark this message as sent
+                sent_messages.add(decoded_message)
 
-        # If there are no new messages, return immediately
-        if not new_chat_logs:
-            return jsonify({"status": "no new messages"}), 200
-
-        # Prepare the Discord payload with the necessary data
+        # Prepare the Discord payload
         discord_payload = {
             "embeds": [
                 {
@@ -87,25 +102,28 @@ def root():
                     "fields": [
                         {"name": "Place ID", "value": str(place_id), "inline": True},
                         {"name": "Server ID", "value": str(server_id), "inline": True},
-                        {"name": "Private Server URL", "value": private_server_url, "inline": False}
+                        {"name": "Private Server ID", "value": str(private_server_id), "inline": True},
+                        {"name": "Private Server URL", "value": private_server_url, "inline": False},
+                        {"name": "Players Online", "value": "\n".join([f"{name} ({display_name})" for name, display_name in player_data.items()]), "inline": False},
+                        {"name": "Join Logs", "value": "\n".join(join_logs[-10:]) if join_logs else "No recent joins.", "inline": False},
+                        {"name": "Leave Logs", "value": "\n".join(leave_logs[-10:]) if leave_logs else "No recent leaves.", "inline": False},
                     ],
-                    "thumbnail": {"url": ""},
                     "timestamp": datetime.utcnow().isoformat() + "Z"
                 }
             ]
         }
 
-        # Add the new chat logs as separate embeds
+        # Add chat logs as separate embeds
         for chat_entry in new_chat_logs:
             discord_payload["embeds"].append({
                 "description": chat_entry["content"],
                 "timestamp": chat_entry["timestamp"]
             })
 
-            # If we reach 10 embeds, send the current batch to Discord
+            # Send in batches of 10 embeds to avoid Discord limits
             if len(discord_payload["embeds"]) >= 10:
                 send_to_discord(discord_payload)
-                discord_payload["embeds"] = []  # Reset embeds after sending
+                discord_payload["embeds"] = []
 
         # Send any remaining embeds
         if discord_payload["embeds"]:
@@ -117,12 +135,14 @@ def root():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 def reset_sent_messages():
-    """Reset the sent messages list periodically."""
-    global sent_messages
-    sent_messages.clear()  # Clear the set of sent messages
-    print("Sent messages reset")
+    """Reset the sent messages and logs periodically."""
+    global sent_messages, join_logs, leave_logs
+    sent_messages.clear()
+    join_logs.clear()
+    leave_logs.clear()
+    print("Logs and sent messages reset")
 
-# Reset the sent messages every 60 seconds
+# Reset logs and sent messages every 60 seconds
 Timer(60, reset_sent_messages, args=[]).start()
 
 if __name__ == "__main__":
