@@ -37,6 +37,22 @@ def send_to_discord(payload):
         print(f"Error while sending to Discord: {str(e)}")
         return False
 
+def send_embeds_in_batches(payload):
+    """Split embeds into batches of 10 and send them to Discord."""
+    # Split the payload into batches of 10 embeds
+    while len(payload["embeds"]) > 10:
+        batch_payload = {
+            "embeds": payload["embeds"][:10],  # Take the first 10 embeds
+        }
+        # Send the batch to Discord
+        send_to_discord(batch_payload)
+        # Remove the sent embeds from the payload
+        payload["embeds"] = payload["embeds"][10:]
+
+    # Send any remaining embeds (less than 10)
+    if payload["embeds"]:
+        send_to_discord(payload)
+
 @app.route('/', methods=['POST'])
 def root():
     """Handle POST requests sent to the root URL."""
@@ -74,21 +90,15 @@ def root():
                         {"name": "Private Server URL", "value": private_server_url, "inline": False}
                     ],
                     "thumbnail": {
-                        "url": "https://i.imgur.com/mfd-JVbC0js.png"
+                        "url": ""  # Add your thumbnail URL here if needed
                     },
                     "timestamp": datetime.utcnow().isoformat() + "Z"
                 }
             ]
         }
 
-        # Debugging: Log the chat logs
-        print("Chat Logs:", chat_buffer)
-
         # Add chat logs as separate embeds
         for chat_entry in chat_buffer:
-            print(f"Adding chat log to embed: {chat_entry}")  # Debugging the chat entry
-            
-            # Make sure content is properly being passed
             discord_payload["embeds"].append({
                 "description": chat_entry["content"],
                 "timestamp": chat_entry["timestamp"]
@@ -97,14 +107,8 @@ def root():
         # Debug: Check the total number of embeds before sending
         print(f"Total embeds: {len(discord_payload['embeds'])}")
 
-        # Send in batches of 10 embeds to avoid exceeding Discord's limit
-        if len(discord_payload["embeds"]) >= 10:
-            send_to_discord(discord_payload)
-            discord_payload["embeds"] = []  # Reset embeds after sending
-
-        # Send any remaining embeds
-        if discord_payload["embeds"]:
-            send_to_discord(discord_payload)
+        # Send the embeds in batches
+        send_embeds_in_batches(discord_payload)
 
         return jsonify({"status": "success"}), 200
     except Exception as e:
