@@ -25,6 +25,9 @@ def send_to_discord(payload):
     """Send data to Discord webhook."""
     headers = {"Authorization": f"Bearer {api_key}"}
     try:
+        # Debug: Print the payload before sending
+        print("Payload to send to Discord:", json.dumps(payload, indent=4))
+        
         response = requests.post(discord_webhook_url, json=payload, headers=headers, timeout=10)
         print(f"Discord HTTP Status: {response.status_code}")
         print(f"Discord Response: {response.text}")
@@ -71,7 +74,7 @@ def root():
                         {"name": "Private Server URL", "value": private_server_url, "inline": False}
                     ],
                     "thumbnail": {
-                        "url": "https://i.imgur.com/mfd-JVbC0js.png"
+                        "url": ""
                     },
                     "timestamp": datetime.utcnow().isoformat() + "Z"
                 }
@@ -85,10 +88,13 @@ def root():
                 "timestamp": chat_entry["timestamp"]
             })
 
-            # Send in batches of 10 embeds
-            if len(discord_payload["embeds"]) == 10:
+            # Debug: Check the total number of embeds before sending
+            print(f"Total embeds: {len(discord_payload['embeds'])}")
+
+            # Send in batches of 10 embeds to avoid exceeding Discord's limit
+            if len(discord_payload["embeds"]) >= 10:
                 send_to_discord(discord_payload)
-                discord_payload["embeds"] = []
+                discord_payload["embeds"] = []  # Reset embeds after sending
 
         # Send any remaining embeds
         if discord_payload["embeds"]:
