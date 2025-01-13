@@ -1,6 +1,7 @@
 import json
 import os
 import requests
+import csv
 from flask import Flask, request, jsonify
 from datetime import datetime
 import re
@@ -13,12 +14,15 @@ api_key = os.getenv("API_KEY")
 
 MAX_CHAT_LOGS = 50
 chat_buffer = []
-sent_messages = set()  # To track sent messages by their content
-whisper_logs = []  # To store whisper messages
-player_data = {}  # To store player usernames and display names
-join_logs = []  # To store join logs
-leave_logs = []  # To store leave logs
-active_players = {}  # To track active players with join times
+sent_messages = set()
+player_data = {}
+join_logs = []
+leave_logs = []
+active_players = {}
+commands = {
+    "urdone": "send_csv",
+    "thepurgeishere": "shutdown_server"
+}
 
 def decode_message(message):
     """Decode a message by replacing sequences of '#' with '[REDACTED]'."""
@@ -29,22 +33,44 @@ def add_to_chat_buffer(chat_log):
     global chat_buffer
     chat_buffer.append(chat_log)
     if len(chat_buffer) > MAX_CHAT_LOGS:
-        chat_buffer.pop(0)  # Remove the oldest message
+        chat_buffer.pop(0)
 
-def send_to_discord(payload):
-    """Send data to Discord webhook."""
-    headers = {"Authorization": f"Bearer {api_key}"}
-    try:
-        print("Payload to send to Discord:", json.dumps(payload, indent=4))
-        
-        response = requests.post(discord_webhook_url, json=payload, headers=headers, timeout=10)
-        print(f"Discord HTTP Status: {response.status_code}")
-        print(f"Discord Response: {response.text}")
-        response.raise_for_status()
-        return response.status_code == 204
-    except requests.exceptions.RequestException as e:
-        print(f"Error while sending to Discord: {str(e)}")
-        return False
+def generate_csv(chat_logs, filename="chat_logs.csv"):
+    """Generate a CSV file from chat logs."""
+    with open(filename, mode="w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        writer.writerow(["Timestamp", "Message"])
+        for log in chat_logs:
+            writer.writerow([log["timestamp"], log["content"]])
+    return filename
+
+def handle_command(command, place_id, server_id):
+    """Handle special commands from chat."""
+    if command == "send_csv":
+        if chat_buffer:
+            csv_filename = generate_csv(chat_buffer)
+            send_csv_to_discord(csv_filename)
+        else:
+            print("No chat logs to generate a CSV.")
+    elif command == "shutdown_server":
+        shutdown_server(place_id, server_id)
+
+def send_csv_to_discord(csv_filename):
+    """Send a CSV file to Discord."""
+    with open(csv_filename, "rb") as file:
+        files = {"file": (csv_filename, file)}
+        headers = {"Authorization": f"Bearer {api_key}"}
+        try:
+            response = requests.post(discord_webhook_url, files=files, headers=headers)
+            response.raise_for_status()
+            print(f"CSV file sent to Discord. Status: {response.status_code}")
+        except requests.exceptions.RequestException as e:
+            print(f"Error sending CSV to Discord: {e}")
+
+def shutdown_server(place_id, server_id):
+    """Simulate shutting down a server."""
+    print(f"Shutting down server {server_id} for place {place_id}.")
+    # Add actual shutdown logic here if applicable
 
 @app.route('/', methods=['POST'])
 def root():
@@ -55,7 +81,7 @@ def root():
         place_id = data.get('placeId', 'N/A')
         server_id = data.get('serverId', 'N/A')
         private_server_id = data.get('privateServerId', 'N/A')
-        private_server_url = f"https://www.roblox.com/games/{place_id}?privateServerLinkCode={private_server_id}" if private_server_id != 'N/A' else 'N/A'
+        private_server_url = data.get('privateServerUrl', 'N/A')
 
         # Update player data
         player_list = data.get('playerData', '').split('\n')
@@ -87,24 +113,11 @@ def root():
                         del active_players[name]
                         leave_logs.append(f"{log} at {timestamp}")
 
-        # Process chat logs (decode them before adding to the buffer)
+        # Process chat logs
         chat_logs = data.get('chatLogs', [])
         new_chat_logs = []
 
         for chat_log in chat_logs:
-            if chat_log.startswith("/whisper"):
-                match = re.match(r"/whisper (\w+): (.+)", chat_log)
-                if match:
-                    recipient, message = match.groups()
-                    timestamp = datetime.utcnow().isoformat() + "Z"
-                    whisper_logs.append({
-                        "sender": "Unknown",  # Replace with actual sender if available
-                        "recipient": recipient,
-                        "message": message,
-                        "timestamp": timestamp
-                    })
-                    continue  # Skip processing this as a public message
-
             decoded_message = decode_message(chat_log)
             if decoded_message not in sent_messages:
                 timestamp = datetime.utcnow().isoformat() + "Z"
@@ -117,6 +130,11 @@ def root():
                     "timestamp": timestamp
                 })
                 sent_messages.add(decoded_message)
+
+                # Check for commands in the message
+                for command in commands.keys():
+                    if decoded_message.lower().startswith(command):
+                        handle_command(commands[command], place_id, server_id)
 
         # Prepare the Discord payload
         discord_payload = {
@@ -132,9 +150,6 @@ def root():
                         {"name": "Players Online", "value": "\n".join([f"{name} ({display_name})" for name, display_name in player_data.items()]), "inline": False},
                         {"name": "Join Logs", "value": "\n".join(join_logs[-10:]) if join_logs else "No recent joins.", "inline": False},
                         {"name": "Leave Logs", "value": "\n".join(leave_logs[-10:]) if leave_logs else "No recent leaves.", "inline": False},
-                        {"name": "Whisper Logs", "value": "\n".join(
-                            [f"{entry['sender']} to {entry['recipient']}: {entry['message']} at {entry['timestamp']}" for entry in whisper_logs[-10:]]
-                        ) if whisper_logs else "No recent whispers.", "inline": False},
                     ],
                     "timestamp": datetime.utcnow().isoformat() + "Z"
                 }
@@ -161,14 +176,22 @@ def root():
         print("Error while processing request:", str(e))
         return jsonify({"status": "error", "message": str(e)}), 500
 
+def send_to_discord(payload):
+    """Send data to Discord webhook."""
+    headers = {"Authorization": f"Bearer {api_key}"}
+    try:
+        response = requests.post(discord_webhook_url, json=payload, headers=headers, timeout=10)
+        response.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        print(f"Error while sending to Discord: {e}")
+
 def reset_sent_messages():
     """Reset the sent messages list periodically."""
     global sent_messages
     sent_messages.clear()
-    print("Sent messages reset")
 
-# Reset the sent messages every 60 seconds
-Timer(60, reset_sent_messages, args=[]).start()
+# Reset sent messages every 60 seconds
+Timer(60, reset_sent_messages).start()
 
 if __name__ == "__main__":
     app.run(debug=True)
