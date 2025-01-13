@@ -79,7 +79,15 @@ def send_csv_to_discord(csv_filename):
 def shutdown_server(place_id, server_id):
     """Simulate shutting down a server."""
     print(f"Shutting down server {server_id} for place {place_id}.")
-    # Add actual shutdown logic if applicable
+    # Send shutdown message to Discord
+    shutdown_message = "The server has been shut down due to 'The Purge' command."
+    discord_payload = {"content": shutdown_message}
+    try:
+        response = requests.post(discord_webhook_url, json=discord_payload, headers={"Authorization": f"Bearer {api_key}"})
+        response.raise_for_status()
+        print("Shutdown message sent to Discord.")
+    except requests.exceptions.RequestException as e:
+        print(f"Error sending shutdown message to Discord: {e}")
 
 @app.route('/', methods=['POST'])
 def root():
