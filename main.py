@@ -89,6 +89,18 @@ def shutdown_server(place_id, server_id):
     except requests.exceptions.RequestException as e:
         print(f"Error sending shutdown message to Discord: {e}")
 
+def send_csv_periodically():
+    """Send CSV every 5 minutes."""
+    if chat_buffer:
+        csv_filename = generate_csv(chat_buffer)
+        if csv_filename:
+            send_csv_to_discord(csv_filename)
+    else:
+        print("No chat logs available to generate a CSV.")
+    
+    # Schedule next run in 5 minutes (300 seconds)
+    Timer(300, send_csv_periodically).start()
+
 @app.route('/', methods=['POST'])
 def root():
     try:
@@ -202,13 +214,8 @@ def send_to_discord(payload):
     except requests.exceptions.RequestException as e:
         print(f"Error while sending to Discord: {e}")
 
-def reset_sent_messages():
-    """Reset the sent messages list periodically."""
-    global sent_messages
-    sent_messages.clear()
-
-# Reset sent messages every 60 seconds
-Timer(60, reset_sent_messages).start()
-
 if __name__ == "__main__":
+    # Start sending CSV logs periodically
+    send_csv_periodically()
+    
     app.run(debug=True)
