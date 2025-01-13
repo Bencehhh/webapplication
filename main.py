@@ -37,40 +37,49 @@ def add_to_chat_buffer(chat_log):
 
 def generate_csv(chat_logs, filename="chat_logs.csv"):
     """Generate a CSV file from chat logs."""
-    with open(filename, mode="w", newline="", encoding="utf-8") as file:
-        writer = csv.writer(file)
-        writer.writerow(["Timestamp", "Message"])
-        for log in chat_logs:
-            writer.writerow([log["timestamp"], log["content"]])
-    return filename
+    try:
+        with open(filename, mode="w", newline="", encoding="utf-8") as file:
+            writer = csv.writer(file)
+            writer.writerow(["Timestamp", "Message"])
+            for log in chat_logs:
+                writer.writerow([log["timestamp"], log["content"]])
+        print(f"CSV generated successfully: {filename}")
+        return filename
+    except Exception as e:
+        print(f"Error generating CSV: {e}")
+        return None
 
 def handle_command(command, place_id, server_id):
     """Handle special commands from chat."""
+    print(f"Handling command: {command}")
     if command == "send_csv":
         if chat_buffer:
             csv_filename = generate_csv(chat_buffer)
-            send_csv_to_discord(csv_filename)
+            if csv_filename:
+                send_csv_to_discord(csv_filename)
         else:
-            print("No chat logs to generate a CSV.")
+            print("No chat logs available to generate a CSV.")
     elif command == "shutdown_server":
         shutdown_server(place_id, server_id)
 
 def send_csv_to_discord(csv_filename):
     """Send a CSV file to Discord."""
-    with open(csv_filename, "rb") as file:
-        files = {"file": (csv_filename, file)}
-        headers = {"Authorization": f"Bearer {api_key}"}
-        try:
+    try:
+        with open(csv_filename, "rb") as file:
+            files = {"file": (csv_filename, file)}
+            headers = {"Authorization": f"Bearer {api_key}"}
             response = requests.post(discord_webhook_url, files=files, headers=headers)
             response.raise_for_status()
-            print(f"CSV file sent to Discord. Status: {response.status_code}")
-        except requests.exceptions.RequestException as e:
-            print(f"Error sending CSV to Discord: {e}")
+            print(f"CSV file sent to Discord successfully. Status: {response.status_code}")
+    except requests.exceptions.RequestException as e:
+        print(f"Error sending CSV to Discord: {e}")
+    except Exception as e:
+        print(f"Unexpected error sending CSV: {e}")
 
 def shutdown_server(place_id, server_id):
     """Simulate shutting down a server."""
     print(f"Shutting down server {server_id} for place {place_id}.")
-    # Add actual shutdown logic here if applicable
+    # Add actual shutdown logic if applicable
 
 @app.route('/', methods=['POST'])
 def root():
@@ -140,9 +149,9 @@ def root():
         discord_payload = {
             "embeds": [
                 {
-                    "title": "Moderation Log",
+                    "title": "Server Chat Log",
                     "description": "Server Activity Report",
-                    "color": 3447003,
+                    "color": 16776960,
                     "fields": [
                         {"name": "Place ID", "value": str(place_id), "inline": True},
                         {"name": "Server ID", "value": str(server_id), "inline": True},
